@@ -70,12 +70,13 @@ function render(image) {
   var fragmentShaderSource = `
     precision mediump float;
 
-    // 색상 유니폼
-    // uniform vec4 u_color;
     // 텍스쳐
     uniform sampler2D u_image;
-    // 실제로 다른 픽셀을 보는 이미지 처리
     uniform vec2 u_textureSize;
+    // 컨볼루션 커널
+    uniform float u_kernel[9];
+    // 나누어줄 가중치
+    uniform float u_kernelWeight;
 
     // 정점 셰이더에서 전달된 텍스쳐 좌표
     varying vec2 v_texCoord;
@@ -84,12 +85,20 @@ function render(image) {
       // 텍스쳐 좌표의 1픽셀 계산
       vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
 
-      // 완쪽, 중앙, 오른쪽 픽셀 평균화 (보간)
-        gl_FragColor = (
-          texture2D(u_image, v_texCoord) + 
-          texture2D(u_image, v_texCoord + vec2(onePixel.x, 0.0)) + 
-          texture2D(u_image, v_texCoord + vec2(-onePixel.x, 0.0))
-        ) / 3.0;
+      // 3X3 컨볼루션 커널
+      vec4 colorSum = 
+        texture2D(u_image, v_texCoord + onePixel * vec2(-1, -1)) * u_kernel[0] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(0, -1)) * u_kernel[1] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(1, -1)) * u_kernel[2] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(-1, 0)) * u_kernel[3] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(0, 0)) * u_kernel[4] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(1, 0)) * u_kernel[5] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(-1, 1)) * u_kernel[6] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(0, 1)) * u_kernel[7] +
+        texture2D(u_image, v_texCoord + onePixel * vec2(1, 1)) * u_kernel[8];
+    
+      // 합계를 가중치로 나누지만 rgb 만을 사용, 알파(밝기)는 1.0으로 설정
+      gl_FragColor = vec4((colorSum / u_kernelWeight).rgb, 1.0);
     }
   `;
 
@@ -138,66 +147,131 @@ function render(image) {
   var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
   var textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
 
-  webglUtils.resizeCanvasToDisplaySize(gl.canvas);
+  var kernelLocation = gl.getUniformLocation(program, "u_kernel[0]");
+  var kernelWeightLocation = gl.getUniformLocation(program, "u_kernelWeight");
 
-  // 캔버스 크기를 조절한다면 클립공간(-1~+1)에서 픽셀로 변환하는 법과 그러한 변환이 캔버스의 어떤 부분에서 이루어져야 하는지 알려줘야 함
-  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+  // 정의하는 컨볼루션 커널에 따라 이미지를 처리할 수 있습니다
+  var kernels = {
+    normal: [0, 0, 0, 0, 1, 0, 0, 0, 0],
+    gaussianBlur: [
+      0.045, 0.112, 0.045, 0.122, 0.332, 0.122, 0.045, 0.122, 0.045,
+    ],
+    gaussianBlur2: [1, 2, 1, 2, 4, 2, 1, 2, 1],
+    gaussianBlur3: [0, 1, 0, 1, 1, 1, 0, 1, 0],
+    unsharpen: [-1, -1, -1, -1, 9, -1, -1, -1, -1],
+    sharpness: [0, -1, 0, -1, 5, -1, 0, -1, 0],
+    sharpen: [-1, -1, -1, -1, 16, -1, -1, -1, -1],
+    edgeDetect: [
+      -0.125, -0.125, -0.125, -0.125, 1, -0.125, -0.125, -0.125, -0.125,
+    ],
+    edgeDetect2: [-1, -1, -1, -1, 8, -1, -1, -1, -1],
+    edgeDetect3: [-5, 0, 0, 0, 0, 0, 0, 0, 5],
+    edgeDetect4: [-1, -1, -1, 0, 0, 0, 1, 1, 1],
+    edgeDetect5: [-1, -1, -1, 2, 2, 2, -1, -1, -1],
+    edgeDetect6: [-5, -5, -5, -5, 39, -5, -5, -5, -5],
+    sobelHorizontal: [1, 2, 1, 0, 0, 0, -1, -2, -1],
+    sobelVertical: [1, 0, -1, 2, 0, -2, 1, 0, -1],
+    previtHorizontal: [1, 1, 1, 0, 0, 0, -1, -1, -1],
+    previtVertical: [1, 0, -1, 1, 0, -1, 1, 0, -1],
+    boxBlur: [0.111, 0.111, 0.111, 0.111, 0.111, 0.111, 0.111, 0.111, 0.111],
+    triangleBlur: [
+      0.0625, 0.125, 0.0625, 0.125, 0.25, 0.125, 0.0625, 0.125, 0.0625,
+    ],
+    emboss: [-2, -1, 0, -1, 1, 1, 0, 1, 2],
+  };
+  var initialSelection = "edgeDetect2";
 
-  // 캔버스 투명하게
-  gl.clearColor(0, 0, 0, 0);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  // 커널 셀렉트 박스
+  var ui = document.querySelector("#ui");
+  var select = document.createElement("select");
+  for (var name in kernels) {
+    var option = document.createElement("option");
+    option.value = name;
+    if (name === initialSelection) {
+      option.selected = true;
+    }
+    option.appendChild(document.createTextNode(name));
+    select.appendChild(option);
+  }
+  select.onchange = function (event) {
+    drawWithKernel(this.options[this.selectedIndex].value);
+  };
+  ui.appendChild(select);
+  drawWithKernel(initialSelection);
 
-  // 실행할 프로그램 알려줌
-  gl.useProgram(program);
+  function computeKernelWeight(kernel) {
+    var weight = kernel.reduce(function (prev, curr) {
+      return prev + curr;
+    });
+    return weight <= 0 ? 1 : weight;
+  }
 
-  // 위에서 설정한 버퍼에서 데이터를 가져와 셰이더의 속성에 제공하는 방법을 알려줘야 함
-  // 속성 활성화
-  gl.enableVertexAttribArray(positionLocation);
+  function drawWithKernel(name) {
+    webglUtils.resizeCanvasToDisplaySize(gl.canvas);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    // 캔버스 크기를 조절한다면 클립공간(-1~+1)에서 픽셀로 변환하는 법과 그러한 변환이 캔버스의 어떤 부분에서 이루어져야 하는지 알려줘야 함
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-  var size = 2; // 반복마다 2개의 컴포넌트
-  var type = gl.FLOAT; // 데이터는 32비트 부동 소수점
-  var normalize = false; // 정규화 여부. 정규화는 데이터가 일정 범위 내에 있도록 데이터를 가공하는 것
-  var stride = 0; // 0 = 다음 위치를 가져오기 위해 반복마다 size * sizeof(type) 만큼 앞으로 이동
-  var offset = 0; // 버퍼의 처음부터 시작
+    // 캔버스 투명하게
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
-  gl.vertexAttribPointer(
-    positionLocation,
-    size,
-    type,
-    normalize,
-    stride,
-    offset
-  );
+    // 실행할 프로그램 알려줌
+    gl.useProgram(program);
 
-  gl.enableVertexAttribArray(texCoordLocation);
+    // 위에서 설정한 버퍼에서 데이터를 가져와 셰이더의 속성에 제공하는 방법을 알려줘야 함
+    // 속성 활성화
+    gl.enableVertexAttribArray(positionLocation);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-  var size = 2; // 2 components per iteration
-  var type = gl.FLOAT; // the data is 32bit floats
-  var normalize = false; // don't normalize the data
-  var stride = 0; // 0 = move forward size * sizeof(type) each iteration to get the next position
-  var offset = 0; // start at the beginning of the buffer
+    var size = 2; // 반복마다 2개의 컴포넌트
+    var type = gl.FLOAT; // 데이터는 32비트 부동 소수점
+    var normalize = false; // 정규화 여부. 정규화는 데이터가 일정 범위 내에 있도록 데이터를 가공하는 것
+    var stride = 0; // 0 = 다음 위치를 가져오기 위해 반복마다 size * sizeof(type) 만큼 앞으로 이동
+    var offset = 0; // 버퍼의 처음부터 시작
 
-  gl.vertexAttribPointer(
-    texCoordLocation,
-    size,
-    type,
-    normalize,
-    stride,
-    offset
-  );
+    gl.vertexAttribPointer(
+      positionLocation,
+      size,
+      type,
+      normalize,
+      stride,
+      offset
+    );
 
-  // 프로그램 설정 후 유니폼 값 설정 가능
-  gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
-  gl.uniform2f(textureSizeLocation, image.width, image.height);
+    gl.enableVertexAttribArray(texCoordLocation);
 
-  var primitiveType = gl.TRIANGLES;
-  var offset = 0;
-  var count = 6;
-  gl.drawArrays(primitiveType, offset, count);
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+
+    var size = 2; // 2 components per iteration
+    var type = gl.FLOAT; // the data is 32bit floats
+    var normalize = false; // don't normalize the data
+    var stride = 0; // 0 = move forward size * sizeof(type) each iteration to get the next position
+    var offset = 0; // start at the beginning of the buffer
+
+    gl.vertexAttribPointer(
+      texCoordLocation,
+      size,
+      type,
+      normalize,
+      stride,
+      offset
+    );
+
+    // 프로그램 설정 후 유니폼 값 설정 가능
+    gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+    gl.uniform2f(textureSizeLocation, image.width, image.height);
+
+    // 커넬과 가중치 설정
+    gl.uniform1fv(kernelLocation, kernels[name]);
+    gl.uniform1f(kernelWeightLocation, computeKernelWeight(kernels[name]));
+
+    var primitiveType = gl.TRIANGLES;
+    var offset = 0;
+    var count = 6;
+    gl.drawArrays(primitiveType, offset, count);
+  }
 }
 
 function setRectangle(gl, x, y, width, height) {
