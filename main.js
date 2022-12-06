@@ -74,15 +74,22 @@ function render(image) {
     // uniform vec4 u_color;
     // 텍스쳐
     uniform sampler2D u_image;
+    // 실제로 다른 픽셀을 보는 이미지 처리
+    uniform vec2 u_textureSize;
 
     // 정점 셰이더에서 전달된 텍스쳐 좌표
     varying vec2 v_texCoord;
     
     void main() {
-        // gl_FragColor = vec4(1,0,0.5,1);
-        // 색상 유니폼 입력을 가져올 수 있음
-        // gl_FragColor = u_color;
-        gl_FragColor = texture2D(u_image, v_texCoord).bgra;
+      // 텍스쳐 좌표의 1픽셀 계산
+      vec2 onePixel = vec2(1.0, 1.0) / u_textureSize;
+
+      // 완쪽, 중앙, 오른쪽 픽셀 평균화 (보간)
+        gl_FragColor = (
+          texture2D(u_image, v_texCoord) + 
+          texture2D(u_image, v_texCoord + vec2(onePixel.x, 0.0)) + 
+          texture2D(u_image, v_texCoord + vec2(-onePixel.x, 0.0))
+        ) / 3.0;
     }
   `;
 
@@ -129,6 +136,7 @@ function render(image) {
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
   var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+  var textureSizeLocation = gl.getUniformLocation(program, "u_textureSize");
 
   webglUtils.resizeCanvasToDisplaySize(gl.canvas);
 
@@ -184,6 +192,7 @@ function render(image) {
 
   // 프로그램 설정 후 유니폼 값 설정 가능
   gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+  gl.uniform2f(textureSizeLocation, image.width, image.height);
 
   var primitiveType = gl.TRIANGLES;
   var offset = 0;
