@@ -35,15 +35,14 @@ function main() {
     attribute vec2 a_position;
 
     uniform vec2 u_resolution;
+    uniform vec2 u_translation;
 
     void main() {
-        // 위치를 픽셀에서 0.0 과 1.0 사이로 변환
-        vec2 zeroToOne = a_position / u_resolution;
-        // 0~1에서 0~2로 변환
+        vec2 position = a_position + u_translation;
+
+        vec2 zeroToOne = position / u_resolution;
         vec2 zeroToTwo = zeroToOne * 2.0;
-        // 0~2에서 -1~+1로 변환(클립공간)
         vec2 clipSpace = zeroToTwo - 1.0;
-        // WebGL은 양수 Y를 위쪽으로, 음수 Y를 아래쪽으로 간주하는 반면 클립 공간에서 좌측 하단 모서리는 -1, -1이 됨. 이것을 바꾸기위해 Y좌표를 뒤집어줌
         gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
     }
   `;
@@ -66,17 +65,17 @@ function main() {
 
   var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
   var colorLocation = gl.getUniformLocation(program, "u_color");
+  var translationLocation = gl.getUniformLocation(program, "u_translation");
 
   var positionBuffer = gl.createBuffer();
 
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  setGeometry(gl); // 버퍼 바인딩 후 버퍼에 지오메트리 데이터 넣기
 
-  var translation = [0, 0];
-  var width = 100;
-  var height = 30;
-  var color = [Math.random(), Math.random(), Math.random(), 1];
+  var translation = [0, 0]; // x, y축 위치
+  var color = [Math.random(), Math.random(), Math.random(), 1]; // 렌더링 될 때마다 랜덤 컬러
 
-  drawScene();
+  drawScene(); // 사각형 렌더링
 
   // 슬라이더 UI
   webglLessonsUI.setupSlider("#x", {
@@ -88,6 +87,7 @@ function main() {
     max: gl.canvas.height,
   });
 
+  // 슬라이더 움직일 때마다 사각형 다시 렌더링
   function updatePosition(index) {
     return function (event, ui) {
       translation[index] = ui.value;
@@ -108,8 +108,6 @@ function main() {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
-    setRectangle(gl, translation[0], translation[1], width, height);
-
     var size = 2;
     var type = gl.FLOAT;
     var normalize = false;
@@ -128,22 +126,41 @@ function main() {
 
     gl.uniform4fv(colorLocation, color);
 
+    gl.uniform2fv(translationLocation, translation);
+
     var primitiveType = gl.TRIANGLES;
     var offset = 0;
-    var count = 6;
+    var count = 30; // M 그릴 때 필요한 삼각형 10개
     gl.drawArrays(primitiveType, offset, count);
   }
 }
 
-function setRectangle(gl, x, y, width, height) {
-  var x1 = x;
-  var x2 = x + width;
-  var y1 = y;
-  var y2 = y + height;
-
+// 삼각형을 사용하여 글자를 생성하는 함수
+// M 작성하도록 행렬 작성
+function setGeometry(gl) {
   gl.bufferData(
     gl.ARRAY_BUFFER,
-    new Float32Array([x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2]),
+    new Float32Array([
+      0, 0, 30, 0, 0, 150,
+
+      0, 150, 30, 0, 30, 150,
+
+      30, 0, 90, 0, 30, 30,
+
+      30, 30, 90, 0, 90, 30,
+
+      90, 0, 120, 0, 90, 150,
+
+      90, 150, 120, 0, 120, 150,
+
+      120, 0, 180, 0, 120, 30,
+
+      120, 30, 180, 0, 180, 30,
+
+      180, 0, 210, 0, 180, 150,
+
+      180, 150, 210, 0, 210, 150,
+    ]),
     gl.STATIC_DRAW
   );
 }
