@@ -36,9 +36,15 @@ function main() {
 
     uniform vec2 u_resolution;
     uniform vec2 u_translation;
+    uniform vec2 u_rotation;
 
     void main() {
-        vec2 position = a_position + u_translation;
+        vec2 rotatedPosition = vec2(
+            a_position.x * u_rotation.y + a_position.y * u_rotation.x,
+            a_position.y * u_rotation.y - a_position.x * u_rotation.x
+        );
+
+        vec2 position = rotatedPosition + u_translation;
 
         vec2 zeroToOne = position / u_resolution;
         vec2 zeroToTwo = zeroToOne * 2.0;
@@ -66,6 +72,7 @@ function main() {
   var resolutionLocation = gl.getUniformLocation(program, "u_resolution");
   var colorLocation = gl.getUniformLocation(program, "u_color");
   var translationLocation = gl.getUniformLocation(program, "u_translation");
+  var rotationLocation = gl.getUniformLocation(program, "u_rotation");
 
   var positionBuffer = gl.createBuffer();
 
@@ -73,6 +80,7 @@ function main() {
   setGeometry(gl); // 버퍼 바인딩 후 버퍼에 지오메트리 데이터 넣기
 
   var translation = [0, 0]; // x, y축 위치
+  var rotation = [0, 1]; // 반지름이 1인 단위원 기준으로 회전하는 위치의 x,y 좌표
   var color = [Math.random(), Math.random(), Math.random(), 1]; // 렌더링 될 때마다 랜덤 컬러
 
   drawScene(); // 사각형 렌더링
@@ -85,6 +93,16 @@ function main() {
   webglLessonsUI.setupSlider("#y", {
     slider: updatePosition(1),
     max: gl.canvas.height,
+  });
+  $("#rotation").gmanUnitCircle({
+    width: 200,
+    height: 200,
+    value: 0,
+    slide: function (e, u) {
+      rotation[0] = u.x;
+      rotation[1] = u.y;
+      drawScene();
+    },
   });
 
   // 슬라이더 움직일 때마다 사각형 다시 렌더링
@@ -128,6 +146,8 @@ function main() {
 
     gl.uniform2fv(translationLocation, translation);
 
+    gl.uniform2fv(rotationLocation, rotation);
+
     var primitiveType = gl.TRIANGLES;
     var offset = 0;
     var count = 30; // M 그릴 때 필요한 삼각형 10개
@@ -166,3 +186,4 @@ function setGeometry(gl) {
 }
 
 window.onload = main;
+// main();
