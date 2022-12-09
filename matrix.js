@@ -176,19 +176,28 @@ function main() {
     var rotationMatrix = m3.rotation(angleInRadians);
     var scaleMatrix = m3.scaling(scale[0], scale[1]);
 
-    var matrix = m3.multiply(translationMatrix, rotationMatrix); // 연산 순서를 바꾸고 싶을 때 셰이더를 새로 작성할 필요 없이 곱하는 순서를 바꿔주면 됨.
-    matrix = m3.multiply(matrix, scaleMatrix);
+    var matrix = m3.identify();
 
-    gl.uniformMatrix3fv(matrixLocation, false, matrix);
+    for (var i = 0; i < 5; i++) {
+      matrix = m3.multiply(matrix, translationMatrix);
+      matrix = m3.multiply(matrix, rotationMatrix);
+      matrix = m3.multiply(matrix, scaleMatrix);
 
-    var primitiveType = gl.TRIANGLES;
-    var offset = 0;
-    var count = 30; // M 그릴 때 필요한 삼각형 10개
-    gl.drawArrays(primitiveType, offset, count);
+      gl.uniformMatrix3fv(matrixLocation, false, matrix);
+
+      var primitiveType = gl.TRIANGLES;
+      var offset = 0;
+      var count = 30; // M 그릴 때 필요한 삼각형 10개
+      gl.drawArrays(primitiveType, offset, count);
+    }
   }
 }
 
 var m3 = {
+  // initialize
+  identify: function () {
+    return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  },
   // 평행이동
   translation: function (tx, ty) {
     return [1, 0, 0, 0, 1, 0, tx, ty, 1];
