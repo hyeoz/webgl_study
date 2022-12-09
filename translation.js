@@ -37,11 +37,14 @@ function main() {
     uniform vec2 u_resolution;
     uniform vec2 u_translation;
     uniform vec2 u_rotation;
+    uniform vec2 u_scale;
 
     void main() {
+        vec2 scaledPosition = a_position * u_scale;
+
         vec2 rotatedPosition = vec2(
-            a_position.x * u_rotation.y + a_position.y * u_rotation.x,
-            a_position.y * u_rotation.y - a_position.x * u_rotation.x
+            scaledPosition.x * u_rotation.y + scaledPosition.y * u_rotation.x,
+            scaledPosition.y * u_rotation.y - scaledPosition.x * u_rotation.x
         );
 
         vec2 position = rotatedPosition + u_translation;
@@ -73,6 +76,7 @@ function main() {
   var colorLocation = gl.getUniformLocation(program, "u_color");
   var translationLocation = gl.getUniformLocation(program, "u_translation");
   var rotationLocation = gl.getUniformLocation(program, "u_rotation");
+  var scaleLocation = gl.getUniformLocation(program, "u_scale");
 
   var positionBuffer = gl.createBuffer();
 
@@ -81,6 +85,7 @@ function main() {
 
   var translation = [0, 0]; // x, y축 위치
   var rotation = [0, 1]; // 반지름이 1인 단위원 기준으로 회전하는 위치의 x,y 좌표
+  var scale = [1, 1];
   var color = [Math.random(), Math.random(), Math.random(), 1]; // 렌더링 될 때마다 랜덤 컬러
 
   drawScene(); // 사각형 렌더링
@@ -104,11 +109,33 @@ function main() {
       drawScene();
     },
   });
+  webglLessonsUI.setupSlider("#scaleX", {
+    value: scale[0],
+    slide: updateScale(0),
+    min: -5,
+    max: 5,
+    step: 0.01,
+    precision: 2,
+  });
+  webglLessonsUI.setupSlider("#scaleY", {
+    value: scale[1],
+    slide: updateScale(1),
+    min: -5,
+    max: 5,
+    step: 0.01,
+    precision: 2,
+  });
 
   // 슬라이더 움직일 때마다 사각형 다시 렌더링
   function updatePosition(index) {
     return function (event, ui) {
       translation[index] = ui.value;
+      drawScene();
+    };
+  }
+  function updateScale(index) {
+    return function (event, ui) {
+      scale[index] = ui.value;
       drawScene();
     };
   }
@@ -147,6 +174,8 @@ function main() {
     gl.uniform2fv(translationLocation, translation);
 
     gl.uniform2fv(rotationLocation, rotation);
+
+    gl.uniform2fv(scaleLocation, scale);
 
     var primitiveType = gl.TRIANGLES;
     var offset = 0;

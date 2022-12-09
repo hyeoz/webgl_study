@@ -62,7 +62,7 @@
     var step = options.step || 1;
     var value = options.value || 0;
     var max = options.max || 1;
-    var fn = options.slider; // not slide -> slider
+    var fn = options.slide; // slide or slider
     var name = gopt["ui-" + options.name] || options.name;
     var uiPrecision =
       options.uiPrecision === undefined ? precision : options.uiPrecision;
