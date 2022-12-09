@@ -175,21 +175,18 @@ function main() {
     var translationMatrix = m3.translation(translation[0], translation[1]);
     var rotationMatrix = m3.rotation(angleInRadians);
     var scaleMatrix = m3.scaling(scale[0], scale[1]);
+    var moveOriginMatrix = m3.translation(-90, -30);
 
-    var matrix = m3.identify();
+    var matrix = m3.multiply(translationMatrix, rotationMatrix);
+    matrix = m3.multiply(matrix, scaleMatrix);
+    matrix = m3.multiply(matrix, moveOriginMatrix);
 
-    for (var i = 0; i < 5; i++) {
-      matrix = m3.multiply(matrix, translationMatrix);
-      matrix = m3.multiply(matrix, rotationMatrix);
-      matrix = m3.multiply(matrix, scaleMatrix);
+    gl.uniformMatrix3fv(matrixLocation, false, matrix);
 
-      gl.uniformMatrix3fv(matrixLocation, false, matrix);
-
-      var primitiveType = gl.TRIANGLES;
-      var offset = 0;
-      var count = 30; // M 그릴 때 필요한 삼각형 10개
-      gl.drawArrays(primitiveType, offset, count);
-    }
+    var primitiveType = gl.TRIANGLES;
+    var offset = 0;
+    var count = 30; // M 그릴 때 필요한 삼각형 10개
+    gl.drawArrays(primitiveType, offset, count);
   }
 }
 
